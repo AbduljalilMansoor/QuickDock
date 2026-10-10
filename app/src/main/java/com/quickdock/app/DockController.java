@@ -1,6 +1,7 @@
 package com.quickdock.app;
 
 import android.animation.ObjectAnimator;
+import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
@@ -28,13 +29,15 @@ import java.util.List;
 /**
  * الدرج الأيمن للتشغيل السريع، كطبقة (Overlay) فوق كل التطبيقات:
  *  • لسان على الحافة اليمنى + شريط سحب شفاف: اسحب لليسار من الحافة أو اضغط اللسان.
- *  • الدرج: 5 خانات مفضلة، زر «All apps»، وزر القلم للتعديل.
- *  • إخفاء تلقائي بعد 4 ثوانٍ بلا لمس، أو بالضغط خارج الدرج. يتوقف المؤقت أثناء التعديل وعرض كل التطبيقات.
- *  • التعديل: ضغط مطوّل أو القلم ← سحب وإفلات لإعادة الترتيب، ✕ للحذف، ضغط خانة فارغة للاختيار، ثم Done/Cancel.
+ *  • الدرج (مضغوط ويتوسط الحافة): 5 خانات مفضلة، زر «All apps»، زر مبدّل التطبيقات، وزر القلم.
+ *  • إخفاء تلقائي بعد 4 ثوانٍ بلا لمس، أو بالضغط خارج الدرج. يتوقف المؤقت أثناء التعديل وعرض الصفحات الكاملة.
+ *  • مبدّل التطبيقات: التطبيقات العاملة/الأخيرة (بدون QuickDock) ← استعادة، إغلاق، أو إغلاق الكل.
  */
 final class DockController {
     private static final int AUTO_HIDE_MS = 4000;
     private static final int SLOTS = Favorites.SLOTS;
+    private static final int DRAWER_W = 252;   // dp
+    private static final int SLOT_H = 56;      // dp
 
     private final Context ctx;
     private final WindowManager wm;
@@ -43,9 +46,10 @@ final class DockController {
     // الحالة
     private String[] favs;
     private String[] draft;
-    private boolean editing, isOpen, closing, allOpen;
+    private boolean editing, isOpen, closing, allOpen, switchOpen;
     private int pickIdx = -1, overIdx = -1;
     private List<AppEntry> apps = new ArrayList<>();
+    private List<RecentApps.Item> recents = new ArrayList<>();
     private Gest g;
 
     // الواجهة
@@ -53,10 +57,12 @@ final class DockController {
     private TouchFrame root, drawer;
     private View scrim, timerFill;
     private TextView title, editBtn, allTitle, toastView, ghostLabel;
+    private SwitcherIcon switchBtn;
     private LinearLayout slotsBox, footView, footEdit, ghost;
     private ImageView ghostIcon;
-    private FrameLayout allPage;
-    private GridLayout grid;
+    private FrameLayout allPage, switchPage;
+    private GridLayout grid, switchGrid;
+    private TextView closeAllBtn;
     private final View[] slotViews = new View[SLOTS];
     private final boolean[] slotEmpty = new boolean[SLOTS];
     private final List<ObjectAnimator> wiggles = new ArrayList<>();
@@ -110,8 +116,7 @@ final class DockController {
         tabBg.setColor(Ui.PANEL2);
         tabBg.setCornerRadii(new float[]{r, r, 0, 0, 0, 0, r, r});
         tab.setBackground(tabBg);
-        FrameLayout.LayoutParams tlp = new FrameLayout.LayoutParams(dp(26), dp(120), Gravity.END | Gravity.CENTER_VERTICAL);
-        zone.addView(tab, tlp);
+        zone.addView(tab, new FrameLayout.LayoutParams(dp(26), dp(120), Gravity.END | Gravity.CENTER_VERTICAL));
 
         View bar = new View(ctx);   // الخط المميّز داخل اللسان
         GradientDrawable barBg = Ui.shape(Ui.ACCENT, dp(2), 0, 0);
@@ -164,7 +169,7 @@ final class DockController {
         wm.addView(root, overlay(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT));
         if (edge != null) edge.setVisibility(View.INVISIBLE);
         renderSlots();
-        drawer.setTranslationX(dp(272));
+        drawer.setTranslationX(dp(DRAWER_W + 8));
         drawer.animate().translationX(0).setDuration(280).setInterpolator(new DecelerateInterpolator()).start();
         if (startEditing) enterEdit(); else armTimer();
         // حدّث قائمة التطبيقات لالتقاط ما ثُبّت حديثاً
@@ -176,7 +181,7 @@ final class DockController {
         closing = true;
         h.removeCallbacks(autoClose);
         if (timerFill != null) timerFill.animate().cancel();
-        drawer.animate().translationX(dp(272)).setDuration(220).withEndAction(this::removeRoot).start();
+        drawer.animate().translationX(dp(DRAWER_W + 8)).setDuration(220).withEndAction(this::removeRoot).start();
     }
 
     private void removeRoot() {
@@ -188,6 +193,7 @@ final class DockController {
         isOpen = false;
         closing = false;
         allOpen = false;
+        switchOpen = false;
         if (edge != null) edge.setVisibility(View.VISIBLE);
     }
 
@@ -208,7 +214,7 @@ final class DockController {
         if (timerFill == null) return;
         timerFill.animate().cancel();
         timerFill.setScaleX(1f);
-        if (editing || allOpen) {                       // متوقف أثناء التعديل وعرض كل التطبيقات
+        if (editing || allOpen || switchOpen) {          // متوقف أثناء التعديل وعرض الصفحات الكاملة
             timerFill.setBackgroundColor(Ui.MUTE);
             return;
         }
@@ -221,10 +227,10 @@ final class DockController {
     //  بناء الواجهة
     // =====================================================================
     private TextView button(String label, boolean primary) {
-        TextView b = Ui.text(ctx, label, 20, primary ? Ui.ON_ACCENT : Ui.TEXT, primary);
+        TextView b = Ui.text(ctx, label, 17, primary ? Ui.ON_ACCENT : Ui.TEXT, primary);
         b.setGravity(Gravity.CENTER);
-        b.setBackground(Ui.shape(primary ? Ui.ACCENT : Ui.PANEL2, dp(14), primary ? Ui.ACCENT : Ui.LINE, dp(1)));
-        b.setMinHeight(dp(56));
+        b.setBackground(Ui.shape(primary ? Ui.ACCENT : Ui.PANEL2, dp(12), primary ? Ui.ACCENT : Ui.LINE, dp(1)));
+        b.setMinHeight(dp(46));
         return b;
     }
 
@@ -236,41 +242,50 @@ final class DockController {
         scrim = new View(ctx);
         scrim.setBackgroundColor(0x47000000);
         scrim.setOnClickListener(v -> {
-            if (allOpen) return;
+            if (allOpen || switchOpen) return;
             if (editing) toast("Tap Done or Cancel to leave edit mode");
             else close();
         });
         root.addView(scrim, new FrameLayout.LayoutParams(-1, -1));
 
-        // الدرج
+        // الدرج: مضغوط الارتفاع ويتوسط الحافة اليمنى
         drawer = new TouchFrame(ctx);
-        drawer.setBackgroundColor(Ui.PANEL);
+        float rr = dp(18);
+        GradientDrawable dbg = new GradientDrawable();
+        dbg.setColor(Ui.PANEL);
+        dbg.setStroke(dp(1), Ui.LINE);
+        dbg.setCornerRadii(new float[]{rr, rr, 0, 0, 0, 0, rr, rr});
+        drawer.setBackground(dbg);
         drawer.setClipChildren(false);
         drawer.setClickable(true);                      // لا تمرّر اللمس للخلفية المعتمة
         drawer.onAnyTouch = () -> { if (isOpen && !closing) armTimer(); };
-        root.addView(drawer, new FrameLayout.LayoutParams(dp(272), -1, Gravity.END));
-
-        View border = new View(ctx);
-        border.setBackgroundColor(Ui.LINE);
-        drawer.addView(border, new FrameLayout.LayoutParams(dp(1), -1, Gravity.START));
+        root.addView(drawer, new FrameLayout.LayoutParams(dp(DRAWER_W), -2, Gravity.END | Gravity.CENTER_VERTICAL));
 
         LinearLayout col = new LinearLayout(ctx);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setClipChildren(false);
-        col.setPadding(dp(18), dp(18), dp(18), dp(16));
-        drawer.addView(col, new FrameLayout.LayoutParams(-1, -1));
+        col.setPadding(dp(14), dp(14), dp(14), dp(14));
+        drawer.addView(col, new FrameLayout.LayoutParams(-1, -2));
 
-        // الرأس: العنوان + القلم
+        // الرأس: العنوان + المبدّل + القلم
         LinearLayout head = new LinearLayout(ctx);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        title = Ui.text(ctx, "Quick launch", 22, Ui.TEXT, true);
+        title = Ui.text(ctx, "Quick launch", 19, Ui.TEXT, true);
         head.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
-        editBtn = Ui.text(ctx, "✎", 22, Ui.TEXT, false);
+
+        switchBtn = new SwitcherIcon(ctx);
+        switchBtn.setBackground(Ui.shape(Ui.PANEL2, dp(11), Ui.LINE, dp(1)));
+        switchBtn.setOnClickListener(v -> showSwitcher());
+        LinearLayout.LayoutParams sbl = new LinearLayout.LayoutParams(dp(42), dp(42));
+        sbl.rightMargin = dp(8);
+        head.addView(switchBtn, sbl);
+
+        editBtn = Ui.text(ctx, "✎", 20, Ui.TEXT, false);
         editBtn.setGravity(Gravity.CENTER);
-        editBtn.setBackground(Ui.shape(Ui.PANEL2, dp(12), Ui.LINE, dp(1)));
+        editBtn.setBackground(Ui.shape(Ui.PANEL2, dp(11), Ui.LINE, dp(1)));
         editBtn.setOnClickListener(v -> enterEdit());
-        head.addView(editBtn, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        col.addView(head, new LinearLayout.LayoutParams(-1, dp(48)));
+        head.addView(editBtn, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        col.addView(head, new LinearLayout.LayoutParams(-1, dp(42)));
 
         // شريط المؤقت
         FrameLayout timer = new FrameLayout(ctx);
@@ -280,16 +295,16 @@ final class DockController {
         timerFill.setPivotX(0f);
         timer.addView(timerFill, new FrameLayout.LayoutParams(-1, -1));
         LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-1, dp(3));
-        tlp.topMargin = dp(12);
+        tlp.topMargin = dp(10);
         col.addView(timer, tlp);
 
-        // الخانات
+        // الخانات (ارتفاع ثابت صغير)
         slotsBox = new LinearLayout(ctx);
         slotsBox.setOrientation(LinearLayout.VERTICAL);
         slotsBox.setClipChildren(false);
-        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, 0, 1f);
-        slp.topMargin = dp(12);
-        slp.bottomMargin = dp(12);
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, -2);
+        slp.topMargin = dp(10);
+        slp.bottomMargin = dp(10);
         col.addView(slotsBox, slp);
 
         // التذييل: All apps  |  Cancel + Done
@@ -313,24 +328,25 @@ final class DockController {
         col.addView(footEdit, new LinearLayout.LayoutParams(-1, -2));
 
         buildAllPage();
+        buildSwitchPage();
 
         // شبح السحب
         ghost = new LinearLayout(ctx);
         ghost.setGravity(Gravity.CENTER_VERTICAL);
-        ghost.setPadding(dp(14), 0, dp(14), 0);
-        ghost.setBackground(Ui.shape(Ui.ACCENT, dp(16), 0, 0));
+        ghost.setPadding(dp(10), 0, dp(10), 0);
+        ghost.setBackground(Ui.shape(Ui.ACCENT, dp(14), 0, 0));
         ghost.setElevation(dp(10));
         ghostIcon = new ImageView(ctx);
-        ghost.addView(ghostIcon, new LinearLayout.LayoutParams(dp(40), dp(40)));
-        ghostLabel = Ui.text(ctx, "", 21, Ui.ON_ACCENT, true);
+        ghost.addView(ghostIcon, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        ghostLabel = Ui.text(ctx, "", 17, Ui.ON_ACCENT, true);
         ghostLabel.setSingleLine(true);
-        ghostLabel.setPadding(dp(14), 0, 0, 0);
+        ghostLabel.setPadding(dp(10), 0, 0, 0);
         ghost.addView(ghostLabel, new LinearLayout.LayoutParams(0, -2, 1f));
         ghost.setVisibility(View.GONE);
-        root.addView(ghost, new FrameLayout.LayoutParams(dp(236), dp(80)));
+        root.addView(ghost, new FrameLayout.LayoutParams(dp(DRAWER_W - 28), dp(SLOT_H)));
 
         // رسالة قصيرة
-        toastView = Ui.text(ctx, "", 19, Ui.TEXT, false);
+        toastView = Ui.text(ctx, "", 18, Ui.TEXT, false);
         toastView.setBackground(Ui.shape(0xCC000000, dp(12), Ui.LINE, dp(1)));
         toastView.setPadding(dp(20), dp(12), dp(20), dp(12));
         toastView.setAlpha(0f);
@@ -362,8 +378,8 @@ final class DockController {
             slotEmpty[i] = a == null;
             View s = makeSlot(i, a);
             slotViews[i] = s;
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, 0, 1f);
-            if (i < SLOTS - 1) lp.bottomMargin = dp(10);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(SLOT_H));
+            if (i < SLOTS - 1) lp.bottomMargin = dp(8);
             slotsBox.addView(s, lp);
             if (editing && a != null) {
                 ObjectAnimator w = ObjectAnimator.ofFloat(s, View.ROTATION, -0.6f, 0.6f);
@@ -376,6 +392,7 @@ final class DockController {
         }
         title.setText(editing ? "Edit favorites" : "Quick launch");
         editBtn.setVisibility(editing ? View.GONE : View.VISIBLE);
+        switchBtn.setVisibility(editing ? View.GONE : View.VISIBLE);
         footView.setVisibility(editing ? View.GONE : View.VISIBLE);
         footEdit.setVisibility(editing ? View.VISIBLE : View.GONE);
     }
@@ -387,10 +404,10 @@ final class DockController {
 
     private void styleSlot(View slot, boolean empty, boolean over) {
         if (empty) {
-            slot.setBackground(over ? Ui.shape(Color.TRANSPARENT, dp(16), Ui.ACCENT, dp(2))
-                    : Ui.dashed(dp(16), Ui.DASH, dp(2), dp(8), dp(5)));
+            slot.setBackground(over ? Ui.shape(Color.TRANSPARENT, dp(14), Ui.ACCENT, dp(2))
+                    : Ui.dashed(dp(14), Ui.DASH, dp(2), dp(8), dp(5)));
         } else {
-            slot.setBackground(Ui.shape(Ui.PANEL2, dp(16), over ? Ui.ACCENT : Ui.LINE, dp(over ? 2 : 1)));
+            slot.setBackground(Ui.shape(Ui.PANEL2, dp(14), over ? Ui.ACCENT : Ui.LINE, dp(over ? 2 : 1)));
         }
     }
 
@@ -402,36 +419,35 @@ final class DockController {
 
         LinearLayout row = new LinearLayout(ctx);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(14), 0, dp(14), 0);
+        row.setPadding(dp(10), 0, dp(10), 0);
         TextView label;
         if (empty) {
-            TextView plus = Ui.text(ctx, "+", 30, Ui.MUTE, false);
+            TextView plus = Ui.text(ctx, "+", 26, Ui.MUTE, false);
             plus.setGravity(Gravity.CENTER);
-            plus.setBackground(Ui.dashed(dp(14), Ui.DASH, dp(2), dp(6), dp(4)));
-            row.addView(plus, new LinearLayout.LayoutParams(dp(52), dp(52)));
-            label = Ui.text(ctx, "Add app", 21, Ui.MUTE, false);
+            plus.setBackground(Ui.dashed(dp(12), Ui.DASH, dp(2), dp(6), dp(4)));
+            row.addView(plus, new LinearLayout.LayoutParams(dp(38), dp(38)));
+            label = Ui.text(ctx, "Add app", 17, Ui.MUTE, false);
         } else {
             ImageView iv = new ImageView(ctx);
             iv.setImageDrawable(a.icon);
-            iv.setPadding(dp(6), dp(6), dp(6), dp(6));
-            iv.setBackground(Ui.shape(Ui.ICON_BG, dp(14), 0, 0));
-            row.addView(iv, new LinearLayout.LayoutParams(dp(52), dp(52)));
-            label = Ui.text(ctx, a.label, 21, Ui.TEXT, false);
+            iv.setPadding(dp(4), dp(4), dp(4), dp(4));
+            iv.setBackground(Ui.shape(Ui.ICON_BG, dp(11), 0, 0));
+            row.addView(iv, new LinearLayout.LayoutParams(dp(38), dp(38)));
+            label = Ui.text(ctx, a.label, 17, Ui.TEXT, false);
         }
         label.setSingleLine(true);
         label.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        label.setPadding(dp(14), 0, 0, 0);
+        label.setPadding(dp(12), 0, 0, 0);
         row.addView(label, new LinearLayout.LayoutParams(0, -2, 1f));
         slot.addView(row, new FrameLayout.LayoutParams(-1, -1));
 
         if (!empty && editing) {   // شارة الحذف ✕
-            TextView x = Ui.text(ctx, "✕", 16, 0xFFFFFFFF, true);
+            TextView x = Ui.text(ctx, "✕", 14, 0xFFFFFFFF, true);
             x.setGravity(Gravity.CENTER);
-            GradientDrawable xb = Ui.shape(Ui.DANGER, dp(16), Ui.PANEL, dp(2));
-            x.setBackground(xb);
+            x.setBackground(Ui.shape(Ui.DANGER, dp(14), Ui.PANEL, dp(2)));
             x.setOnClickListener(v -> { draft[idx] = ""; renderSlots(); });
-            FrameLayout.LayoutParams xl = new FrameLayout.LayoutParams(dp(32), dp(32), Gravity.TOP | Gravity.START);
-            xl.setMargins(-dp(8), -dp(8), 0, 0);
+            FrameLayout.LayoutParams xl = new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.TOP | Gravity.START);
+            xl.setMargins(-dp(7), -dp(7), 0, 0);
             slot.addView(x, xl);
         }
         slot.setOnTouchListener((v, e) -> onSlotTouch(v, e, idx));
@@ -487,8 +503,8 @@ final class DockController {
     private void updateDrag(float rx, float ry) {
         int[] rl = new int[2];
         root.getLocationOnScreen(rl);
-        ghost.setX(rx - rl[0] - dp(118));
-        ghost.setY(ry - rl[1] - dp(40));
+        ghost.setX(rx - rl[0] - dp((DRAWER_W - 28) / 2f));
+        ghost.setY(ry - rl[1] - dp(SLOT_H / 2f));
         int over = slotAt(ry);
         if (over != overIdx) {
             if (overIdx >= 0) styleSlot(slotViews[overIdx], slotEmpty[overIdx], false);
@@ -566,22 +582,28 @@ final class DockController {
     // =====================================================================
     //  كل التطبيقات / الاختيار
     // =====================================================================
-    private void buildAllPage() {
-        allPage = new FrameLayout(ctx);
-        allPage.setBackgroundColor(0xF50A0D0F);
-        allPage.setClickable(true);
-        allPage.setVisibility(View.GONE);
-
+    private LinearLayout fullPageColumn(FrameLayout page) {
+        page.setBackgroundColor(0xF50A0D0F);
+        page.setClickable(true);
+        page.setVisibility(View.GONE);
         LinearLayout col = new LinearLayout(ctx);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setPadding(dp(60), dp(36), dp(60), dp(24));
+        page.addView(col, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(page, new FrameLayout.LayoutParams(-1, -1));
+        return col;
+    }
+
+    private void buildAllPage() {
+        allPage = new FrameLayout(ctx);
+        LinearLayout col = fullPageColumn(allPage);
 
         LinearLayout top = new LinearLayout(ctx);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        allTitle = Ui.text(ctx, "All apps", 34, Ui.TEXT, true);
+        allTitle = Ui.text(ctx, "All apps", 32, Ui.TEXT, true);
         top.addView(allTitle, new LinearLayout.LayoutParams(0, -2, 1f));
         TextView close = button("Close", false);
-        close.setPadding(dp(22), dp(14), dp(22), dp(14));
+        close.setPadding(dp(22), dp(12), dp(22), dp(12));
         close.setOnClickListener(v -> hideAll());
         top.addView(close, new LinearLayout.LayoutParams(-2, -2));
         col.addView(top, new LinearLayout.LayoutParams(-1, -2));
@@ -593,9 +615,6 @@ final class DockController {
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, 0, 1f);
         slp.topMargin = dp(22);
         col.addView(sv, slp);
-
-        allPage.addView(col, new FrameLayout.LayoutParams(-1, -1));
-        root.addView(allPage, new FrameLayout.LayoutParams(-1, -1));
     }
 
     private void showAll(int pick) {
@@ -633,8 +652,8 @@ final class DockController {
             c.setBackground(Ui.shape(Ui.PANEL, dp(18), inFavs.contains(a.pkg) ? Ui.ACCENT : Ui.LINE, dp(1)));
             ImageView iv = new ImageView(ctx);
             iv.setImageDrawable(a.icon);
-            c.addView(iv, new LinearLayout.LayoutParams(dp(64), dp(64)));
-            TextView t = Ui.text(ctx, a.label, 18, Ui.TEXT, false);
+            c.addView(iv, new LinearLayout.LayoutParams(dp(60), dp(60)));
+            TextView t = Ui.text(ctx, a.label, 17, Ui.TEXT, false);
             t.setGravity(Gravity.CENTER);
             t.setMaxLines(1);
             t.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -642,7 +661,7 @@ final class DockController {
             c.addView(t, new LinearLayout.LayoutParams(-1, -2));
             GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
             lp.width = cell;
-            lp.height = dp(150);
+            lp.height = dp(140);
             lp.setMargins(0, 0, gap, gap);
             c.setLayoutParams(lp);
             c.setOnClickListener(v -> onAppPicked(a));
@@ -663,10 +682,174 @@ final class DockController {
     }
 
     // =====================================================================
+    //  مبدّل التطبيقات (التطبيقات العاملة/الأخيرة)
+    // =====================================================================
+    private void buildSwitchPage() {
+        switchPage = new FrameLayout(ctx);
+        LinearLayout col = fullPageColumn(switchPage);
+
+        LinearLayout top = new LinearLayout(ctx);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.addView(Ui.text(ctx, "Running apps", 32, Ui.TEXT, true), new LinearLayout.LayoutParams(0, -2, 1f));
+
+        closeAllBtn = Ui.text(ctx, "Close all", 17, 0xFFFFFFFF, true);
+        closeAllBtn.setGravity(Gravity.CENTER);
+        closeAllBtn.setBackground(Ui.shape(Ui.DANGER, dp(12), Ui.DANGER, dp(1)));
+        closeAllBtn.setPadding(dp(22), dp(12), dp(22), dp(12));
+        closeAllBtn.setOnClickListener(v -> closeApps(allRecentPackages()));
+        LinearLayout.LayoutParams cal = new LinearLayout.LayoutParams(-2, -2);
+        cal.rightMargin = dp(12);
+        top.addView(closeAllBtn, cal);
+
+        TextView close = button("Back", false);
+        close.setPadding(dp(22), dp(12), dp(22), dp(12));
+        close.setOnClickListener(v -> hideSwitcher());
+        top.addView(close, new LinearLayout.LayoutParams(-2, -2));
+        col.addView(top, new LinearLayout.LayoutParams(-1, -2));
+
+        ScrollView sv = new ScrollView(ctx);
+        switchGrid = new GridLayout(ctx);
+        sv.addView(switchGrid, new FrameLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, 0, 1f);
+        slp.topMargin = dp(22);
+        col.addView(sv, slp);
+    }
+
+    private void showSwitcher() {
+        switchOpen = true;
+        recents = new ArrayList<>();
+        fillSwitcher(true);
+        switchPage.setVisibility(View.VISIBLE);
+        armTimer();   // يتوقف المؤقت
+        if (!RecentApps.hasAccess(ctx)) return;
+        new Thread(() -> {
+            final List<RecentApps.Item> list = RecentApps.load(ctx);
+            h.post(() -> {
+                if (!switchOpen) return;
+                recents = list;
+                fillSwitcher(false);
+            });
+        }).start();
+    }
+
+    private void hideSwitcher() {
+        if (switchPage != null) switchPage.setVisibility(View.GONE);
+        switchOpen = false;
+        if (isOpen) armTimer();
+    }
+
+    private List<String> allRecentPackages() {
+        List<String> l = new ArrayList<>();
+        for (RecentApps.Item it : recents) l.add(it.app.pkg);
+        return l;
+    }
+
+    private void fillSwitcher(boolean loading) {
+        switchGrid.removeAllViews();
+        closeAllBtn.setVisibility(recents.isEmpty() ? View.GONE : View.VISIBLE);
+        if (!RecentApps.hasAccess(ctx)) {
+            switchGrid.setColumnCount(1);
+            TextView t = Ui.text(ctx, "Usage access is needed to list running apps.\n\nGrant it once over ADB (the install page does this for you):\n"
+                    + "appops set " + ctx.getPackageName() + " GET_USAGE_STATS allow", 19, Ui.MUTE, false);
+            switchGrid.addView(t);
+            return;
+        }
+        if (recents.isEmpty()) {
+            switchGrid.setColumnCount(1);
+            switchGrid.addView(Ui.text(ctx, loading ? "Loading…" : "No running apps", 22, Ui.MUTE, false));
+            return;
+        }
+        int totalW = ctx.getResources().getDisplayMetrics().widthPixels - dp(120);
+        int gap = dp(20);
+        int cols = Math.max(3, totalW / dp(230));
+        int cell = (totalW - gap * (cols - 1)) / cols;
+        switchGrid.setColumnCount(cols);
+        for (final RecentApps.Item it : recents) {
+            FrameLayout card = new FrameLayout(ctx);
+            card.setClipChildren(false);
+            card.setBackground(Ui.shape(Ui.PANEL, dp(18), it.top ? Ui.ACCENT : Ui.LINE, dp(it.top ? 2 : 1)));
+
+            LinearLayout inner = new LinearLayout(ctx);
+            inner.setOrientation(LinearLayout.VERTICAL);
+            inner.setGravity(Gravity.CENTER);
+            ImageView iv = new ImageView(ctx);
+            iv.setImageDrawable(it.app.icon);
+            inner.addView(iv, new LinearLayout.LayoutParams(dp(64), dp(64)));
+            TextView name = Ui.text(ctx, it.app.label, 18, Ui.TEXT, true);
+            name.setGravity(Gravity.CENTER);
+            name.setSingleLine(true);
+            name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            name.setPadding(dp(10), dp(8), dp(10), 0);
+            inner.addView(name, new LinearLayout.LayoutParams(-1, -2));
+            TextView sub = Ui.text(ctx, it.top ? "Current · now" : RecentApps.ago(it.lastUsed), 14, it.top ? Ui.ACCENT : Ui.MUTE, false);
+            sub.setGravity(Gravity.CENTER);
+            inner.addView(sub, new LinearLayout.LayoutParams(-1, -2));
+            card.addView(inner, new FrameLayout.LayoutParams(-1, -1));
+            card.setOnClickListener(v -> restore(it.app.pkg));      // استعادة
+
+            TextView x = Ui.text(ctx, "✕", 16, 0xFFFFFFFF, true);   // إغلاق هذا التطبيق
+            x.setGravity(Gravity.CENTER);
+            x.setBackground(Ui.shape(Ui.DANGER, dp(18), Ui.PANEL, dp(2)));
+            x.setOnClickListener(v -> closeApps(Arrays.asList(it.app.pkg)));
+            FrameLayout.LayoutParams xl = new FrameLayout.LayoutParams(dp(36), dp(36), Gravity.TOP | Gravity.END);
+            xl.setMargins(0, dp(8), dp(8), 0);
+            card.addView(x, xl);
+
+            GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
+            lp.width = cell;
+            lp.height = dp(160);
+            lp.setMargins(0, 0, gap, gap);
+            card.setLayoutParams(lp);
+            switchGrid.addView(card);
+        }
+    }
+
+    /** استعادة تطبيق عامل: تشغيل واجهته يُرجع مهمته الموجودة للأمام. */
+    private void restore(String pkg) {
+        launch(pkg);
+    }
+
+    /**
+     * إغلاق تطبيقات: تطبيق عادي لا يملك صلاحية إغلاق نافذة تطبيق آخر مباشرة. الحل: إن كان أحدها ظاهراً الآن نعود
+     * للشاشة الرئيسية ليصبح في الخلفية، ثم نطلب من النظام إنهاء عملياته (KILL_BACKGROUND_PROCESSES).
+     * التطبيق الذي يشغّل صوتاً أو ملاحة (خدمة أمامية) قد لا يُغلق بهذه الطريقة.
+     */
+    private void closeApps(final List<String> pkgs) {
+        if (pkgs.isEmpty()) return;
+        boolean needHome = false;
+        for (RecentApps.Item it : recents) if (it.top && pkgs.contains(it.app.pkg)) needHome = true;
+        for (String p : pkgs) RecentApps.markClosed(ctx, p);
+
+        // أزلها من القائمة فوراً
+        List<RecentApps.Item> rest = new ArrayList<>();
+        for (RecentApps.Item it : recents) if (!pkgs.contains(it.app.pkg)) rest.add(it);
+        recents = rest;
+        fillSwitcher(false);
+        toast(pkgs.size() > 1 ? "Closing " + pkgs.size() + " apps…" : "Closing app…");
+
+        if (needHome) {
+            try {
+                ctx.startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (Exception ignored) { }
+        }
+        final ActivityManager am = (ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE);
+        long[] delays = needHome ? new long[]{900, 2400} : new long[]{250, 1500};
+        for (long d : delays) {
+            h.postDelayed(() -> {
+                for (String p : pkgs) {
+                    try { am.killBackgroundProcesses(p); } catch (Exception ignored) { }
+                }
+            }, d);
+        }
+    }
+
+    // =====================================================================
     //  التشغيل
     // =====================================================================
     private void launch(String pkg) {
         hideAll();
+        hideSwitcher();
         editing = false;
         draft = null;
         Intent i = ctx.getPackageManager().getLaunchIntentForPackage(pkg);

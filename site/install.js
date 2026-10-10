@@ -6,6 +6,7 @@
   // "optional" = قد لا تكون موجودة في بعض السيارات، وليس خطأً
   var GRANTS = [];
   GRANTS.push({ label: 'الظهور فوق التطبيقات (الدرج واللسان على الحافة)', cmd: 'appops set ' + PKG + ' SYSTEM_ALERT_WINDOW allow' });
+  GRANTS.push({ label: 'الوصول لبيانات الاستخدام (مبدّل التطبيقات)', cmd: 'appops set ' + PKG + ' GET_USAGE_STATS allow' });
   GRANTS.push({ label: 'تثبيت التطبيقات (لزر «تحديث»)', cmd: 'appops set ' + PKG + ' REQUEST_INSTALL_PACKAGES allow' });
   GRANTS.push({ label: 'الإشعارات', cmd: 'pm grant ' + PKG + ' android.permission.POST_NOTIFICATIONS', optional: true });
   GRANTS.push({ label: 'استثناء من توفير الطاقة', cmd: 'dumpsys deviceidle whitelist +' + PKG, optional: true });

@@ -20,7 +20,7 @@ public class MainActivity extends Activity {
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private SharedPreferences prefs;
-    private TextView vPerm, vService, bGrant, bToggle, bAuto;
+    private TextView vPerm, vUsage, vService, bGrant, bToggle, bAuto;
 
     private int dp(float v) { return Ui.dp(this, v); }
 
@@ -43,8 +43,10 @@ public class MainActivity extends Activity {
         col.addView(sub);
 
         vPerm = Ui.text(this, "", 18, Ui.TEXT, false);
+        vUsage = Ui.text(this, "", 18, Ui.TEXT, false);
         vService = Ui.text(this, "", 18, Ui.TEXT, false);
         col.addView(card(vPerm));
+        col.addView(card(vUsage));
         col.addView(card(vService));
 
         bGrant = button("Grant overlay permission", true);
@@ -81,9 +83,11 @@ public class MainActivity extends Activity {
                 "How to use\n"
                         + "• Swipe left from the right edge of the screen, or tap the amber edge tab.\n"
                         + "• The drawer closes after 4 seconds without touch, or when you tap outside it.\n"
-                        + "• Long-press an app (or tap ✎) to edit: drag to reorder, ✕ to remove, tap an empty slot to add.\n\n"
+                        + "• Long-press an app (or tap ✎) to edit: drag to reorder, ✕ to remove, tap an empty slot to add.\n"
+                        + "• Tap the pages icon in the drawer header to see running apps: tap one to restore it, ✕ to close it, or Close all.\n\n"
                         + "If the overlay permission cannot be granted from the screen, run over ADB:\n"
-                        + "appops set " + getPackageName() + " SYSTEM_ALERT_WINDOW allow",
+                        + "appops set " + getPackageName() + " SYSTEM_ALERT_WINDOW allow\n"
+                        + "appops set " + getPackageName() + " GET_USAGE_STATS allow   (for the App Switcher)",
                 15, Ui.MUTE, false);
         help.setPadding(0, dp(20), 0, 0);
         col.addView(help);
@@ -131,6 +135,8 @@ public class MainActivity extends Activity {
     private void refresh() {
         boolean perm = Settings.canDrawOverlays(this);
         vPerm.setText(perm ? "✅  Overlay permission granted" : "❌  Overlay permission missing (needed to draw over other apps)");
+        vUsage.setText(RecentApps.hasAccess(this) ? "✅  Usage access granted (App Switcher can list running apps)"
+                : "⚠️  Usage access missing — the App Switcher needs it (run: appops set " + getPackageName() + " GET_USAGE_STATS allow)");
         vService.setText(DockService.running ? "✅  QuickDock is running — look for the amber tab on the right edge"
                 : "⚪  QuickDock is stopped");
         bGrant.setVisibility(perm ? android.view.View.GONE : android.view.View.VISIBLE);

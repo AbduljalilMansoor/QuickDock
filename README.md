@@ -8,6 +8,9 @@ Swipe left from the edge (or tap the tab) to open a drawer with your **5 favorit
 - **Auto-hide:** closes after **4 seconds** without touch (a thin bar at the top of the drawer counts down), or immediately when you tap outside the drawer.
 - **Favorites:** a fixed grid of 5 slots. Empty slots show a dashed **+ Add app**. One tap launches the app and closes the drawer.
 - **All apps:** a button at the bottom opens a full-screen grid of every installed app.
+- **App Switcher:** the pages icon in the drawer header opens *Running apps*: tap a card to **restore** it, ✕ to **close** it, or **Close all**. QuickDock itself is never listed.
+  - Android does not let a normal app read the system task list, so the list is built from usage statistics (apps that came to the foreground in the last 12 hours and were not closed from here). Needs: `appops set com.quickdock.app GET_USAGE_STATS allow` (the install page does it).
+  - Closing works by ending the app's background process (going Home first if it is on screen). Apps running audio or navigation as a foreground service may not close.
 - **Edit mode:** long-press an app or tap ✎ in the header.
   - Drag and drop to reorder; ✕ badge removes an app; tap an empty slot to pick from the full library.
   - The auto-hide timer is paused while editing and while the All apps grid is open.
@@ -26,6 +29,9 @@ Open the install page (`https://<user>.github.io/<repo>/`) in Chrome or Edge, co
     appops set com.quickdock.app SYSTEM_ALERT_WINDOW allow
 
 Open QuickDock once; it starts the edge tab (and starts it automatically after boot).
+
+## Layout
+The drawer is compact (about 250 dp wide, 5 slots of 56 dp) and centered on the right edge.
 
 ## Notes
 - The swipe zone is a 34 dp strip on the right edge that sits above other apps, so that strip no longer reaches the app underneath.
