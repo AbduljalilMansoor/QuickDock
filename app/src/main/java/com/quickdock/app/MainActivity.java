@@ -60,6 +60,10 @@ public class MainActivity extends Activity {
         });
         col.addView(bToggle, btnLp());
 
+        TextView deck = button("Open Dash Deck (design the instrument display)", true);
+        deck.setOnClickListener(v -> startActivity(new Intent(this, DeckActivity.class)));
+        col.addView(deck, btnLp());
+
         TextView open = button("Open drawer now", false);
         open.setOnClickListener(v -> { DockService.send(this, DockService.ACTION_OPEN); ui.postDelayed(this::refresh, 400); });
         col.addView(open, btnLp());
@@ -84,7 +88,8 @@ public class MainActivity extends Activity {
                         + "• Swipe left from the right edge of the screen, or tap the amber edge tab.\n"
                         + "• The drawer closes after 4 seconds without touch, or when you tap outside it.\n"
                         + "• Long-press an app (or tap ✎) to edit: drag to reorder, ✕ to remove, tap an empty slot to add.\n"
-                        + "• Tap the pages icon in the drawer header to see running apps: tap one to restore it, ✕ to close it, or Close all.\n\n"
+                        + "• Tap the pages icon in the drawer header to see running apps: tap one to restore it, ✕ to close it, or Close all.\n"
+                        + "• Tap the Deck icon (a wide screen with three tiles) to design the instrument display: drag widgets from the library, move/resize/remove them, then Deploy.\n\n"
                         + "If the overlay permission cannot be granted from the screen, run over ADB:\n"
                         + "appops set " + getPackageName() + " SYSTEM_ALERT_WINDOW allow\n"
                         + "appops set " + getPackageName() + " GET_USAGE_STATS allow   (for the App Switcher)",
@@ -98,6 +103,7 @@ public class MainActivity extends Activity {
         if (Settings.canDrawOverlays(this) && prefs.getBoolean(KEY_AUTOSTART, true) && !DockService.running) {
             DockService.start(this);
         }
+        try { BeltService.sync(this); } catch (Exception ignored) { }   // تنبيه حزام الأمان إن كان مضبوطاً
     }
 
     @Override

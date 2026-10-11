@@ -10,6 +10,7 @@ public class BootReceiver extends BroadcastReceiver {
     public void onReceive(Context ctx, Intent intent) {
         try {
             if (Favorites.prefs(ctx).getBoolean(MainActivity.KEY_AUTOSTART, true)) DockService.start(ctx);
+            BeltService.sync(ctx);   // تنبيه حزام الأمان
         } catch (Exception ignored) { }
     }
 }

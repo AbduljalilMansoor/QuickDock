@@ -17,8 +17,28 @@ Swipe left from the edge (or tap the tab) to open a drawer with your **5 favorit
   - **Done** saves to local storage; **Cancel** discards the changes.
 - Favorites are saved on the device (SharedPreferences) and survive reboots. The tab comes back after the car starts (can be switched off in the app).
 
+## Dash Deck — design the instrument display (Display 2)
+Tap the **Deck icon** in the drawer header (a wide screen with three tiles), or the *Open Dash Deck* button in the app.
+- **Top:** a simulation of the instrument display, a 24-column grid (columns 01–24) whose proportions follow the real display when it is visible to the app.
+- **Bottom:** the **widget library**. Drag (or long-press then drag) a widget onto the display.
+- **On the display:** tap a widget to select it → drag to **move**, drag the ◢ handle to **resize**, ✕ to **remove**, ⚙ for its **settings**. Widgets snap to the grid and cannot overlap.
+- **Deploy** saves the layout and opens it on the chosen display (default **Display 2**; change it from the *Display ▾* button). *Revert* returns to the deployed layout, *Stop* closes the deck, *Preview here* shows it on the current screen.
+- Edits are kept as a **draft** until you press Deploy.
+
+Widgets in the library:
+| Widget | Notes |
+|---|---|
+| **Weather** | Open-Meteo (needs internet). City or the car's location. |
+| **Media player** | Track and controls for any music app. Needs notification access (the install page grants it). |
+| **Seat belts** | Driver/passenger belt status; alarm + red banner if the car moves with an unfastened belt. Set up once from ⚙ by choosing the right car signals. |
+| **Prayer times** | Next prayer + countdown + five prayers. ⚙: **city** (search, presets or car location), **method**, **0–15 min** adjustment per prayer, 12/24-hour. |
+
+Prayer methods: **Jafari – Leva Research Institute, Qum** (Fajr 16°, Maghrib 4°, Isha 14°), **Institute of Geophysics, University of Tehran** (17.7°, 4.5°, 14°), **Muslim World League** (18°, 17°), **Umm al-Qura** (18.5°, Isha 90 min after Maghrib). Times are calculated on the device; if your local calendar differs by a few minutes use the per-prayer adjustment.
+
+Deploying to a secondary display may be refused by Android on some cars. If so the app shows the exact ADB command (`adb shell am start --display 2 -n com.quickdock.app/.DeckDisplayActivity`).
+
 ## Build
-1. Create a new GitHub repository and upload the contents of this folder (including the hidden `.github` folder).
+1. Create a new GitHub repository and upload the contents of this folder (including the hidden `.github` folder and the `autolink-stubs` folder).
 2. **Actions** tab → *Build QuickDock APK* runs automatically; download `QuickDock.apk` from **Releases**.
 3. Optional: add a `SIGNING_KEY` secret (base64 of a `.jks`, alias `quickdock`, password `quickdock-sign-2026`) so updates install over the old version. Without it each build has a different key, so uninstall the old build first.
 4. Optional: *Settings → Pages → Source: GitHub Actions* for the browser install page.

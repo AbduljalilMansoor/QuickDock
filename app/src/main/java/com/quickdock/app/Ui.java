@@ -14,6 +14,11 @@ final class Ui {
     static final int TEXT = 0xFFECE7DC, MUTE = 0xFF8D968F, ACCENT = 0xFFE0A23A, DANGER = 0xFFD9534A;
     static final int ICON_BG = 0xFF2D373C, DASH = 0xFF3A464C, ON_ACCENT = 0xFF1A1405;
 
+    // أسماء مستعارة يستخدمها كود الودجات المنقول من Car Home
+    static final int CARD2 = PANEL2, MUTED = MUTE;
+
+    static GradientDrawable round(int fill, float radiusPx) { return shape(fill, Math.round(radiusPx), 0, 0); }
+
     static int dp(Context c, float v) { return Math.round(v * c.getResources().getDisplayMetrics().density); }
 
     static TextView text(Context c, CharSequence s, float sp, int color, boolean bold) {

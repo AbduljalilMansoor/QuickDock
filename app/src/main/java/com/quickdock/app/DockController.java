@@ -36,7 +36,7 @@ import java.util.List;
 final class DockController {
     private static final int AUTO_HIDE_MS = 4000;
     private static final int SLOTS = Favorites.SLOTS;
-    private static final int DRAWER_W = 252;   // dp
+    private static final int DRAWER_W = 276;   // dp
     private static final int SLOT_H = 56;      // dp
 
     private final Context ctx;
@@ -58,6 +58,7 @@ final class DockController {
     private View scrim, timerFill;
     private TextView title, editBtn, allTitle, toastView, ghostLabel;
     private SwitcherIcon switchBtn;
+    private DeckIcon deckBtn;
     private LinearLayout slotsBox, footView, footEdit, ghost;
     private ImageView ghostIcon;
     private FrameLayout allPage, switchPage;
@@ -270,8 +271,17 @@ final class DockController {
         // الرأس: العنوان + المبدّل + القلم
         LinearLayout head = new LinearLayout(ctx);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        title = Ui.text(ctx, "Quick launch", 19, Ui.TEXT, true);
+        title = Ui.text(ctx, "Quick launch", 17, Ui.TEXT, true);
+        title.setSingleLine(true);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         head.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        deckBtn = new DeckIcon(ctx);   // Dash Deck: تصميم شاشة العدادات
+        deckBtn.setBackground(Ui.shape(Ui.PANEL2, dp(11), Ui.LINE, dp(1)));
+        deckBtn.setOnClickListener(v -> openDeck());
+        LinearLayout.LayoutParams dbl = new LinearLayout.LayoutParams(dp(42), dp(42));
+        dbl.rightMargin = dp(8);
+        head.addView(deckBtn, dbl);
 
         switchBtn = new SwitcherIcon(ctx);
         switchBtn.setBackground(Ui.shape(Ui.PANEL2, dp(11), Ui.LINE, dp(1)));
@@ -393,6 +403,7 @@ final class DockController {
         title.setText(editing ? "Edit favorites" : "Quick launch");
         editBtn.setVisibility(editing ? View.GONE : View.VISIBLE);
         switchBtn.setVisibility(editing ? View.GONE : View.VISIBLE);
+        deckBtn.setVisibility(editing ? View.GONE : View.VISIBLE);
         footView.setVisibility(editing ? View.GONE : View.VISIBLE);
         footEdit.setVisibility(editing ? View.VISIBLE : View.GONE);
     }
@@ -842,6 +853,19 @@ final class DockController {
                 }
             }, d);
         }
+    }
+
+    // =====================================================================
+    //  Dash Deck (تصميم شاشة العدادات)
+    // =====================================================================
+    private void openDeck() {
+        try {
+            ctx.startActivity(new Intent(ctx, DeckActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (Exception e) {
+            toast("Could not open Dash Deck");
+            return;
+        }
+        close();
     }
 
     // =====================================================================

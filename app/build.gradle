@@ -49,4 +49,6 @@ android {
 }
 
 dependencies {
+    // للبناء فقط: الكلاس الحقيقي يأتي من نظام السيارة (uses-library autolink.sdk)
+    compileOnly project(':autolink-stubs')
 }
